@@ -10,14 +10,15 @@ import random
 from collections import defaultdict
 
 
-class _START_TOKEN(object):
-    """Class to indicate the start of a string.  Use the singleton START_TOKEN
-    instead of creating new instances.
+class _TOKEN(object):
+    """Class to indicate tokens that aren't actual strings (ie the start/end of
+    a word).
     """
     def __mul__(self, x):
         """Any number of START_TOKENs is a START_TOKEN"""
         return self
-START_TOKEN = _START_TOKEN()
+START_TOKEN = _TOKEN()
+END_TOKEN = _TOKEN()
 
 
 def process_args():
@@ -65,6 +66,7 @@ def make_chain(names):
                 count = 1
         # Whatever we had left over is the final group
         chain[complete_group][current_group * count] += 1
+        chain[current_group * count][END_TOKEN] += 1
     return chain
 
 def normalize_chain(chain):
@@ -78,18 +80,31 @@ def normalize_chain(chain):
             post[k] = post[k]*1.0/total
 
 def generate_name(chain):
-    """Generate a random name by walking the markov chain."""
+    """Generate a random name by walking the markov chain.  Uses the length
+    distribution of the input to create a target length, and terminates as
+    early as possible once it has passed that target length.
+    """
     name = []
     old_token = START_TOKEN
-    name_len = weighted_choice(chain['length'])
-    for i in range(name_len):
+    target_length = weighted_choice(chain['length'])
+    while True:
         post = chain[old_token]
-        token = weighted_choice(post)
-        if token is None:
-            # None means our token had no following tokens in the sample set
+        if len(''.join(name)) >= target_length and END_TOKEN in post:
+            # If we're at or past our target length, end if we can
             break
+
+        token = weighted_choice(post)
+        if token == END_TOKEN:
+            # If we're close to our target length or have no valid next token,
+            # stop; otherwise, repick
+            if len(post) == 1 or len(''.join(name)) > 0.75 * target_length:
+                break
+            else:
+                continue
+
         name.append(token)
         old_token = token
+
     name[0] = name[0].upper()
     return ''.join(name)
 
